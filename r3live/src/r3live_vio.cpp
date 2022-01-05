@@ -228,12 +228,12 @@ void R3LIVE::publish_track_img( cv::Mat &img, double frame_cost_time = -1 )
 
         if ( pub_image.cols <= 640 )
         {
-            cv::putText( pub_image, std::string( fps_char ), cv::Point( 30, 30 ), cv::FONT_HERSHEY_COMPLEX, 1, cv::Scalar( 255, 255, 255 ), 2, 8,
+            cv::putText( pub_image, std::string( fps_char ), cv::Point( 30, 30 ), cv::FONT_HERSHEY_COMPLEX, 0.5, cv::Scalar( 255, 255, 255 ), 2, 8,
                          0 ); // 640 * 480
         }
         else if ( pub_image.cols > 640 )
         {
-            cv::putText( pub_image, std::string( fps_char ), cv::Point( 30, 50 ), cv::FONT_HERSHEY_COMPLEX, 2, cv::Scalar( 255, 255, 255 ), 2, 8,
+            cv::putText( pub_image, std::string( fps_char ), cv::Point( 30, 50 ), cv::FONT_HERSHEY_COMPLEX, 1, cv::Scalar( 255, 255, 255 ), 2, 8,
                          0 ); // 1280 * 1080
         }
     }
@@ -1081,7 +1081,7 @@ void R3LIVE::service_VIO_update()
     op_track.m_maximum_vio_tracked_pts = m_maximum_vio_tracked_pts;
     m_map_rgb_pts.m_minimum_depth_for_projection = m_tracker_minimum_depth;
     m_map_rgb_pts.m_maximum_depth_for_projection = m_tracker_maximum_depth;
-    cv::imshow( "Control panel", generate_control_panel_img().clone() );
+    //cv::imshow( "Control panel", generate_control_panel_img().clone() );
     Common_tools::Timer tim;
     cv::Mat             img_get;
     while ( ros::ok() )
@@ -1232,8 +1232,9 @@ void R3LIVE::service_VIO_update()
         g_vio_frame_cost_time = display_cost_time;
         // publish_render_pts( m_pub_render_rgb_pts, m_map_rgb_pts );
         publish_camera_odom( img_pose, message_time );
-        // publish_track_img( op_track.m_debug_track_img, display_cost_time );
-        publish_track_img( img_pose->m_raw_img, display_cost_time );
+        //publish_track_img( op_track.m_debug_track_img, display_cost_time );
+        publish_track_img( img_pose->m_img, display_cost_time );
+        publish_track_pts(op_track);
 
         if ( m_if_pub_raw_img )
         {
