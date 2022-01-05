@@ -1,5 +1,6 @@
 #include <ros/ros.h>
 #include <pcl_conversions/pcl_conversions.h>
+#include <pcl/common/transforms.h>
 #include <sensor_msgs/PointCloud2.h>
 #include <livox_ros_driver/CustomMsg.h>
 #include "../tools/tools_logger.hpp"
@@ -75,6 +76,7 @@ double jump_up_limit, jump_down_limit;
 double cos160;
 double edgea, edgeb;
 double smallp_intersect, smallp_ratio;
+double min_intensity, min_dist;
 int    point_filter_num;
 int    g_if_using_raw_point = 1;
 int    g_LiDAR_sampling_point_step = 3;
@@ -88,6 +90,9 @@ void   pub_func( pcl::PointCloud< PointType > &pl, ros::Publisher pub, const ros
 int    plane_judge( const pcl::PointCloud< PointType > &pl, vector< orgtype > &types, uint i, uint &i_nex, Eigen::Vector3d &curr_direct );
 bool   small_plane( const pcl::PointCloud< PointType > &pl, vector< orgtype > &types, uint i_cur, uint &i_nex, Eigen::Vector3d &curr_direct );
 bool   edge_jump_judge( const pcl::PointCloud< PointType > &pl, vector< orgtype > &types, uint i, Surround nor_dir );
+
+vector<double> lidar_imu_rotm;
+Eigen::Matrix4f lidar_rot;
 
 int main( int argc, char **argv )
 {
@@ -115,6 +120,17 @@ int main( int argc, char **argv )
     n.param< int >( "Lidar_front_end/point_filter_num", point_filter_num, 1 );
     n.param< int >( "Lidar_front_end/point_step", g_LiDAR_sampling_point_step, 3 );
     n.param< int >( "Lidar_front_end/using_raw_point", g_if_using_raw_point, 1 );
+    n.param< double >( "Lidar_front_end/min_intensity", min_intensity, 0);
+    n.param< double >( "Lidar_front_end/min_dist", min_dist, 0.1);
+    if(n.getParam("Lidar_front_end/lidar_imu_rotm", lidar_imu_rotm)){
+        lidar_rot << lidar_imu_rotm[0], lidar_imu_rotm[1], lidar_imu_rotm[2], 0.0,
+                 lidar_imu_rotm[3], lidar_imu_rotm[4], lidar_imu_rotm[5], 0.0,
+                 lidar_imu_rotm[6], lidar_imu_rotm[7], lidar_imu_rotm[8], 0.0,
+                 0.0, 0.0, 0.0, 1.0;
+    }else{
+        cout << "No LiDAR->IMU intrinsics defined, assuming identity" << endl;
+        lidar_rot = Eigen::Matrix4f::Identity();
+    }
 
     jump_up_limit = cos( jump_up_limit / 180 * M_PI );
     jump_down_limit = cos( jump_down_limit / 180 * M_PI );
@@ -162,8 +178,12 @@ int main( int argc, char **argv )
 double vx, vy, vz;
 void   mid_handler( const sensor_msgs::PointCloud2::ConstPtr &msg )
 {
+    pcl::PointCloud< PointType > pl_pretf;
     pcl::PointCloud< PointType > pl;
-    pcl::fromROSMsg( *msg, pl );
+    pcl::fromROSMsg( *msg, pl_pretf );
+
+    // Fix lidar orientation
+    pcl::transformPointCloud(pl_pretf, pl, lidar_rot);
 
     pcl::PointCloud< PointType > pl_corn, pl_surf;
     vector< orgtype >            types;
@@ -216,7 +236,8 @@ void horizon_handler( const livox_ros_driver::CustomMsg::ConstPtr &msg )
             && ( !IS_VALID( msg->points[ i ].x ) ) 
             && ( !IS_VALID( msg->points[ i ].y ) ) 
             && ( !IS_VALID( msg->points[ i ].z ) )
-            && msg->points[ i ].x > 0.7 )
+            && msg->points[ i ].x > min_dist
+            && ( msg->points[ i ].reflectivity > min_intensity ) )
         {
             // https://github.com/Livox-SDK/Livox-SDK/wiki/Livox-SDK-Communication-Protocol
             // See [3.4 Tag Information] 
@@ -277,10 +298,15 @@ void horizon_handler( const livox_ros_driver::CustomMsg::ConstPtr &msg )
     {
         return;
     }
+
+    pcl::PointCloud< PointType > pl_surf_tf;
+    // Fix LiDAR rotation
+    pcl::transformPointCloud(pl_surf, pl_surf_tf, lidar_rot);
+
     ros::Time ct;
     ct.fromNSec( msg->timebase );
     pub_func( pl_full, pub_full, msg->header.stamp );
-    pub_func( pl_surf, pub_surf, msg->header.stamp );
+    pub_func( pl_surf_tf, pub_surf, msg->header.stamp );
     pub_func( pl_corn, pub_corn, msg->header.stamp );
 }
 
