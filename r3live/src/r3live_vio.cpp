@@ -184,16 +184,18 @@ cv::Mat R3LIVE::generate_control_panel_img()
     return res_image;
 }
 
-void R3LIVE::set_initial_camera_parameter( StatesGroup &state, double *intrinsic_data, double *camera_dist_data, double *imu_camera_ext_R,
-                                           double *imu_camera_ext_t, double cam_k_scale )
+void R3LIVE::set_initial_camera_parameter( StatesGroup &state, double *intrinsic_data, double* intrinsic_data_real, double *camera_dist_data, 
+                                           double *imu_camera_ext_R, double *imu_camera_ext_t, double cam_k_scale )
 {
     scope_color( ANSI_COLOR_YELLOW_BOLD );
     // g_cam_K << 863.4241 / cam_k_scale, 0, 625.6808 / cam_k_scale,
     //     0, 863.4171 / cam_k_scale, 518.3392 / cam_k_scale,
     //     0, 0, 1;
 
-    g_cam_K << intrinsic_data[ 0 ] / cam_k_scale, intrinsic_data[ 1 ], intrinsic_data[ 2 ] / cam_k_scale, intrinsic_data[ 3 ],
-        intrinsic_data[ 4 ] / cam_k_scale, intrinsic_data[ 5 ] / cam_k_scale, intrinsic_data[ 6 ], intrinsic_data[ 7 ], intrinsic_data[ 8 ];
+    g_cam_K << intrinsic_data[ 0 ], intrinsic_data[ 1 ], intrinsic_data[ 2 ], intrinsic_data[ 3 ],
+        intrinsic_data[ 4 ], intrinsic_data[ 5 ] / cam_k_scale, intrinsic_data[ 6 ], intrinsic_data[ 7 ], intrinsic_data[ 8 ];
+    g_cam_K_real << intrinsic_data_real[ 0 ], intrinsic_data_real[ 1 ], intrinsic_data_real[ 2 ], intrinsic_data_real[ 3 ],
+        intrinsic_data_real[ 4 ], intrinsic_data_real[ 5 ], intrinsic_data_real[ 6 ], intrinsic_data_real[ 7 ], intrinsic_data_real[ 8 ];
     g_cam_dist = Eigen::Map< Eigen::Matrix< double, 5, 1 > >( camera_dist_data );
     state.rot_ext_i2c = Eigen::Map< Eigen::Matrix< double, 3, 3, Eigen::RowMajor > >( imu_camera_ext_R );
     state.pos_ext_i2c = Eigen::Map< Eigen::Matrix< double, 3, 1 > >( imu_camera_ext_t );
@@ -380,11 +382,16 @@ void   R3LIVE::process_image( cv::Mat &temp_img, double msg_time )
         m_camera_start_ros_tim = msg_time;
         m_vio_scale_factor = 1280 * m_image_downsample_ratio / temp_img.cols; // 320 * 24
         // load_vio_parameters();
-        set_initial_camera_parameter( g_lio_state, m_camera_intrinsic.data(), m_camera_dist_coeffs.data(), m_camera_ext_R.data(),
-                                      m_camera_ext_t.data(), m_vio_scale_factor );
+        set_initial_camera_parameter( g_lio_state, m_camera_intrinsic.data(), m_camera_intrinsic_real.data(), m_camera_dist_coeffs.data(), 
+                                      m_camera_ext_R.data(), m_camera_ext_t.data(), m_vio_scale_factor );
         cv::eigen2cv( g_cam_K, intrinsic );
         cv::eigen2cv( g_cam_dist, dist_coeffs );
-        initUndistortRectifyMap( intrinsic, dist_coeffs, cv::Mat(), intrinsic, cv::Size( 1280 / m_vio_scale_factor, 1024 / m_vio_scale_factor ),
+        // Big hack
+        cv::Mat real_intrinsics_cv;
+        auto dist_coeffs_fisheye = dist_coeffs.rowRange(0, 4);
+        cv::eigen2cv( g_cam_K_real, real_intrinsics_cv);
+         
+        cv::fisheye::initUndistortRectifyMap( real_intrinsics_cv, dist_coeffs_fisheye, cv::Mat(), intrinsic, cv::Size( 1280 / m_vio_scale_factor, 1024 / m_vio_scale_factor ),
                                  CV_16SC2, m_ud_map1, m_ud_map2 );
         m_thread_pool_ptr->commit_task( &R3LIVE::service_pub_rgb_maps, this);
         m_thread_pool_ptr->commit_task( &R3LIVE::service_VIO_update, this);
@@ -426,8 +433,9 @@ void   R3LIVE::process_image( cv::Mat &temp_img, double msg_time )
 void R3LIVE::load_vio_parameters()
 {
 
-    std::vector< double > camera_intrinsic_data, camera_dist_coeffs_data, camera_ext_R_data, camera_ext_t_data;
+    std::vector< double > camera_intrinsic_data, camera_intrinsic_real_data, camera_dist_coeffs_data, camera_ext_R_data, camera_ext_t_data;
     m_ros_node_handle.getParam( "r3live_vio/camera_intrinsic", camera_intrinsic_data );
+    m_ros_node_handle.getParam( "r3live_vio/camera_intrinsic_real", camera_intrinsic_real_data);
     m_ros_node_handle.getParam( "r3live_vio/camera_dist_coeffs", camera_dist_coeffs_data );
     m_ros_node_handle.getParam( "r3live_vio/camera_ext_R", camera_ext_R_data );
     m_ros_node_handle.getParam( "r3live_vio/camera_ext_t", camera_ext_t_data );
@@ -444,12 +452,15 @@ void R3LIVE::load_vio_parameters()
     }
 
     m_camera_intrinsic = Eigen::Map< Eigen::Matrix< double, 3, 3, Eigen::RowMajor > >( camera_intrinsic_data.data() );
+    m_camera_intrinsic_real = Eigen::Map< Eigen::Matrix< double, 3, 3, Eigen::RowMajor > >( camera_intrinsic_real_data.data() );
     m_camera_dist_coeffs = Eigen::Map< Eigen::Matrix< double, 5, 1 > >( camera_dist_coeffs_data.data() );
     m_camera_ext_R = Eigen::Map< Eigen::Matrix< double, 3, 3, Eigen::RowMajor > >( camera_ext_R_data.data() );
     m_camera_ext_t = Eigen::Map< Eigen::Matrix< double, 3, 1 > >( camera_ext_t_data.data() );
 
-    cout << "[Ros_parameter]: r3live_vio/Camera Intrinsic: " << endl;
+    cout << "[Ros_parameter]: r3live_vio/Camera Projection Intrinsic: " << endl;
     cout << m_camera_intrinsic << endl;
+    cout << "[Ros_parameter]: r3live_vio/Camera Intrinsic: " << endl;
+    cout << m_camera_intrinsic_real << endl;
     cout << "[Ros_parameter]: r3live_vio/Camera distcoeff: " << m_camera_dist_coeffs.transpose() << endl;
     cout << "[Ros_parameter]: r3live_vio/Camera extrinsic R: " << endl;
     cout << m_camera_ext_R << endl;

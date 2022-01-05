@@ -235,6 +235,7 @@ public:
     std::deque<std::shared_ptr<Image_frame>> m_queue_image_with_pose;
     std::list<std::shared_ptr<Image_frame>> g_image_vec;
     Eigen::Matrix3d g_cam_K;
+    Eigen::Matrix3d g_cam_K_real;
     Eigen::Matrix<double, 5, 1> g_cam_dist;
     double m_vio_scale_factor = 1.0;
     cv::Mat m_ud_map1, m_ud_map2;
@@ -261,11 +262,12 @@ public:
     double m_tracker_minimum_depth = 3;
     double m_tracker_maximum_depth = 200;
     int m_if_record_mvs = 0;
-    cv::Mat intrinsic, dist_coeffs;
+    cv::Mat intrinsic, intrinsic_actual, dist_coeffs;
 
     mat_3_3 m_inital_rot_ext_i2c;
     vec_3  m_inital_pos_ext_i2c;
     Eigen::Matrix<double, 3, 3, Eigen::RowMajor> m_camera_intrinsic;
+    Eigen::Matrix<double, 3, 3, Eigen::RowMajor> m_camera_intrinsic_real;
     Eigen::Matrix<double, 5, 1> m_camera_dist_coeffs;
     Eigen::Matrix<double, 3, 3, Eigen::RowMajor> m_camera_ext_R;
     Eigen::Matrix<double, 3, 1> m_camera_ext_t;
@@ -283,6 +285,7 @@ public:
     void load_vio_parameters();
     void set_initial_camera_parameter(StatesGroup &state,
                                           double * camera_intrinsic_data,
+                                          double * camera_intrinsic_real_data,
                                           double * camera_dist_data,
                                           double * imu_camera_ext_R ,
                                           double * imu_camera_ext_t ,
