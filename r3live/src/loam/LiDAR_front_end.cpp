@@ -299,13 +299,15 @@ void horizon_handler( const livox_ros_driver::CustomMsg::ConstPtr &msg )
         return;
     }
 
+    pcl::PointCloud< PointType > pl_full_tf;
     pcl::PointCloud< PointType > pl_surf_tf;
     // Fix LiDAR rotation
+    pcl::transformPointCloud(pl_full, pl_full_tf, lidar_rot);
     pcl::transformPointCloud(pl_surf, pl_surf_tf, lidar_rot);
 
     ros::Time ct;
     ct.fromNSec( msg->timebase );
-    pub_func( pl_full, pub_full, msg->header.stamp );
+    pub_func( pl_full_tf, pub_full, msg->header.stamp );
     pub_func( pl_surf_tf, pub_surf, msg->header.stamp );
     pub_func( pl_corn, pub_corn, msg->header.stamp );
 }
